@@ -483,6 +483,9 @@
   async function downloadTemplate() {
     if (!(await ensureXlsx())) return toast("A biblioteca de planilhas não carregou. Verifique sua conexão.");
     const sheet = XLSX.utils.aoa_to_sheet([COLUNAS.map(([n]) => n)]);
+    // Coluna ISBN (C) em formato texto, para o Excel não transformar em 9,79E+12.
+    for (let r = 2; r <= 500; r++) sheet["C" + r] = { t: "s", v: "", z: "@" };
+    sheet["!ref"] = "A1:H500";
     sheet["!cols"] = COLUNAS.map(([, w]) => ({ wch: w }));
     const help = XLSX.utils.aoa_to_sheet([
       ["Como preencher"],
@@ -563,9 +566,15 @@
     if (!novos.length) return toast(`Nada a importar: ${ignorados} livro(s) já existem no acervo.`);
     if (!confirm(`Importar ${novos.length} livro(s) novo(s)?` + (ignorados ? ` (${ignorados} duplicado(s) serão ignorados)` : ""))) return;
 
+    // Campos vazios não geram erro: ficam em branco (ex.: sem ISBN, o livro só não é achado por ISBN).
+    const vazio = (v) => (v === "" ? null : v);
+    const linhas = novos.map((b) => ({
+      titulo: b.titulo, autor: b.autor, isbn: vazio(b.isbn), capa_url: vazio(b.capa_url),
+      estante: vazio(b.estante), nivel: vazio(b.nivel), posicao: vazio(b.posicao), observacoes: vazio(b.observacoes)
+    }));
     toast("Importando livros...");
-    for (let i = 0; i < novos.length; i += 500) {
-      const { error } = await supabase.from("livros").insert(novos.slice(i, i + 500));
+    for (let i = 0; i < linhas.length; i += 500) {
+      const { error } = await supabase.from("livros").insert(linhas.slice(i, i + 500));
       if (error) {
         console.error("Erro ao importar:", error);
         await loadBooks();
@@ -588,11 +597,20 @@
     $("sidebar").classList.add("open");
     $("sidebarScrim").classList.add("show");
     $("menuButton").setAttribute("aria-expanded", "true");
+    $("menuButton").textContent = "✕";
   }
   function closeSidebar() {
     $("sidebar").classList.remove("open");
     $("sidebarScrim").classList.remove("show");
     $("menuButton").setAttribute("aria-expanded", "false");
+    $("menuButton").textContent = "☰";
+  }
+
+  function applyTheme(tema, salvar = true) {
+    document.documentElement.dataset.theme = tema;
+    document.querySelectorAll("[data-theme-btn]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeBtn === tema)));
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", tema === "dark" ? "#0f1623" : "#2459a9");
+    if (salvar) { try { localStorage.setItem("tema", tema); } catch (e) { /* sem armazenamento */ } }
   }
 
   function bindEvents() {
@@ -602,9 +620,17 @@
     let searchTimer;
     $("searchInput").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderBooks, 120); });
     $("clearSearch").addEventListener("click", () => { $("searchInput").value = ""; renderBooks(); $("searchInput").focus(); });
+    $("excelMenuButton").addEventListener("click", () => {
+      const sub = $("excelSubmenu");
+      const abrir = sub.hidden;
+      sub.hidden = !abrir;
+      $("excelMenuButton").setAttribute("aria-expanded", String(abrir));
+    });
     $("exportButton").addEventListener("click", () => { closeSidebar(); exportXlsx(); });
-    $("templateButton")?.addEventListener("click", downloadTemplate);
-    $("importButton")?.addEventListener("click", () => $("importFile").click());
+    document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.themeBtn)));
+    applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light", false);
+    $("templateButton")?.addEventListener("click", () => { closeSidebar(); downloadTemplate(); });
+    $("importButton")?.addEventListener("click", () => { closeSidebar(); $("importFile").click(); });
     $("importFile")?.addEventListener("change", importXlsx);
     $("passwordForm").addEventListener("submit", changePassword);
     $("createUserForm").addEventListener("submit", createUser);
