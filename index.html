@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2459a9">
+  <title>Biblioteca Escolar</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase JS v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- SheetJS: exportação real para .xlsx -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <section id="loginScreen" class="login-screen">
+    <form id="loginForm" class="login-card">
+      <div class="brand-mark">B</div>
+      <p class="eyebrow">ACERVO ESCOLAR</p>
+      <h1>Biblioteca Escolar</h1>
+      <p class="muted">Entre para consultar a localização dos livros.</p>
+      <label for="loginEmail">E-mail</label>
+      <input id="loginEmail" type="email" autocomplete="username" required placeholder="seu@email.com">
+      <label for="loginPassword">Senha</label>
+      <input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Sua senha">
+      <button class="primary full" type="submit">Entrar</button>
+      <p id="loginMessage" class="message" role="status"></p>
+    </form>
+  </section>
+
+  <div id="appScreen" class="app-shell hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand"><div class="brand-mark small">B</div><div><strong>Biblioteca</strong><span>Escolar</span></div></div>
+      <nav aria-label="Menu principal">
+        <button class="nav-item active" data-view="booksView"><span>⌕</span> Procurar livros</button>
+        <button class="nav-item" id="exportButton"><span>⇩</span> Exportar XLSX</button>
+        <button class="nav-item" data-view="settingsView"><span>⚙</span> Configurações</button>
+        <button class="nav-item" id="adminMenuButton" data-view="adminView" hidden><span>＋</span> Gerenciar usuários</button>
+        <button class="nav-item logout" id="logoutButton"><span>↪</span> Sair</button>
+      </nav>
+      <div class="sidebar-footer">Catálogo da biblioteca</div>
+    </aside>
+    <div id="sidebarScrim" class="sidebar-scrim"></div>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button id="menuButton" class="icon-button menu-button" aria-label="Abrir menu" aria-expanded="false">☰</button>
+        <div class="greeting"><span class="muted">Bem-vindo à biblioteca</span><h2 id="greetingText">Olá!</h2></div>
+        <div id="userAvatar" class="avatar" aria-label="Inicial do usuário">U</div>
+      </header>
+
+      <section id="booksView" class="view">
+        <div class="page-heading">
+          <div><p class="eyebrow">CATÁLOGO</p><h1>Encontre seu próximo livro</h1><p class="muted">Pesquise por título, autor ou ISBN.</p></div>
+          <div class="book-count"><strong id="bookCount">0</strong><span>livros encontrados</span></div>
+        </div>
+        <div class="search-box"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Digite título, autor ou ISBN..." aria-label="Pesquisar livros"><button id="clearSearch" class="clear-search" type="button" aria-label="Limpar pesquisa">×</button></div>
+        <p id="catalogMessage" class="message" role="status"></p>
+        <div id="booksGrid" class="books-grid"></div>
+        <div id="emptyState" class="empty-state hidden"><div class="empty-icon">⌕</div><h3>Nenhum livro encontrado</h3><p>Tente outro título, autor ou ISBN.</p></div>
+      </section>
+
+      <section id="settingsView" class="view hidden">
+        <div class="page-heading"><div><p class="eyebrow">SUA CONTA</p><h1>Configurações</h1><p class="muted">Atualize sua senha com segurança.</p></div></div>
+        <form id="passwordForm" class="panel form-panel">
+          <h2>Alterar senha</h2>
+          <p class="muted">Informe a senha atual e escolha uma nova senha.</p>
+          <label for="currentPassword">Senha atual</label><input id="currentPassword" type="password" autocomplete="current-password" required>
+          <label for="newPassword">Nova senha</label><input id="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+          <label for="confirmPassword">Confirmar nova senha</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+          <p class="form-hint">Use pelo menos 8 caracteres e evite reutilizar senhas de outros sites.</p>
+          <button class="primary" type="submit">Salvar nova senha</button>
+          <p id="passwordMessage" class="message" role="status"></p>
+        </form>
+      </section>
+
+      <section id="adminView" class="view hidden">
+        <div class="page-heading"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h1>Gerenciar usuários</h1><p class="muted">Crie acessos para a equipe da biblioteca.</p></div></div>
+        <form id="createUserForm" class="panel form-panel">
+          <h2>Novo usuário</h2>
+          <label for="newUserName">Nome completo</label><input id="newUserName" required maxlength="100" placeholder="Nome do usuário">
+          <label for="newUserEmail">E-mail de acesso</label><input id="newUserEmail" type="email" required placeholder="usuario@escola.com">
+          <label for="newUserPassword">Senha inicial</label><input id="newUserPassword" type="password" minlength="8" required autocomplete="new-password">
+          <label for="newUserRole">Permissão</label><select id="newUserRole"><option value="operador">Operador</option><option value="admin">Administrador</option></select>
+          <button class="primary" type="submit">Criar usuário</button>
+          <p id="adminMessage" class="message" role="status"></p>
+          <p class="form-hint">A criação ocorre por uma Edge Function protegida. Nunca coloque a chave service_role neste site.</p>
+        </form>
+      </section>
+
+      <footer class="app-footer">Biblioteca Escolar <span>•</span> Consulta do acervo</footer>
+    </main>
+  </div>
+
+  <div id="bookModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-backdrop" data-close-modal></div>
+    <article class="modal-card">
+      <button id="closeModal" class="modal-close" aria-label="Fechar">×</button>
+      <div class="modal-book-head"><img id="modalCover" class="modal-cover" alt="" src=""><div><p class="eyebrow">LOCALIZAÇÃO NO ACERVO</p><h2 id="modalTitle"></h2><p id="modalAuthor" class="muted"></p><p id="modalIsbn" class="isbn-line"></p></div></div>
+      <div class="shelf-map">
+        <div class="shelf-map-title"><span>MAPA DA PRATELEIRA</span><span id="mapShelfLabel">Estante —</span></div>
+        <div class="shelf-visual">
+          <div class="shelf-side-label">ESTANTE</div>
+          <div class="shelf-body">
+            <div class="shelf-top"><span id="mapLevelLabel">Nível —</span></div>
+            <div class="shelf-books" aria-label="Representação ilustrativa da prateleira">
+              <span class="shelf-book book-one"></span><span class="shelf-book book-two"></span><span class="shelf-book book-three"></span><span id="selectedBookMarker" class="selected-book"><span>SEU LIVRO</span></span><span class="shelf-book book-four"></span><span class="shelf-book book-five"></span>
+            </div>
+            <div class="shelf-plank"></div>
+            <div class="shelf-position"><span>FRENTE</span><span class="position-arrow">↔</span><span>TRÁS</span></div>
+          </div>
+        </div>
+        <div class="location-details">
+          <div><span>Estante</span><strong id="detailShelf">—</strong></div>
+          <div><span>Nível</span><strong id="detailLevel">—</strong></div>
+          <div><span>Posição</span><strong id="detailPosition">—</strong></div>
+        </div>
+        <p id="modalLocationNote" class="location-note">Confirme a sinalização física da estante na biblioteca.</p>
+      </div>
+    </article>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+</body>
+</html>
