@@ -3,7 +3,7 @@
   "use strict";
 
   // Configure com os dados do seu projeto Supabase (Project Settings > API).
-  const SUPABASE_URL = "https://rxpnavfecwanuvzzwryh.supabase.com";
+  const SUPABASE_URL = "https://rxpnavfecwanuvzzwryh.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_TD-Trwc9AGl_jRm-Kf7vYg_cHKaoZhO";
 
   const CONFIGURADO = !SUPABASE_URL.includes("SEU-PROJETO") &&
