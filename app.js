@@ -1,4 +1,4 @@
-/* Biblioteca Escolar — lógica de interface, Supabase e exportação XLSX */
+/* Biblioteca Escolar — lógica de interface, Supabase e planilhas XLSX */
 (() => {
   "use strict";
 
@@ -17,8 +17,29 @@
   let currentProfile = null;
   let allBooks = [];
   let toastTimeout;
+  let resetChannel = null;
 
+  const isAdmin = () => currentProfile?.papel === "admin";
+
+  // A biblioteca de planilhas é pesada: só é baixada quando alguém usa exportar/modelo/importar.
+  let xlsxPromise = null;
+  function ensureXlsx() {
+    if (window.XLSX) return Promise.resolve(true);
+    if (!xlsxPromise) {
+      xlsxPromise = new Promise((resolve) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+        s.onload = () => resolve(true);
+        s.onerror = () => { xlsxPromise = null; resolve(false); };
+        document.head.appendChild(s);
+      });
+    }
+    return xlsxPromise;
+  }
+
+  /* ---------- utilidades ---------- */
   function showMessage(element, message, type = "") {
+    if (!element) return;
     element.textContent = message;
     element.className = `message ${type}`.trim();
   }
@@ -28,7 +49,7 @@
     el.textContent = message;
     el.classList.add("show");
     clearTimeout(toastTimeout);
-    toastTimeout = setTimeout(() => el.classList.remove("show"), 3200);
+    toastTimeout = setTimeout(() => el.classList.remove("show"), 3600);
   }
 
   function safeText(value, fallback = "Não informado") {
@@ -52,9 +73,9 @@
     const name = safeText(profile?.nome || metadataName || emailName, "Usuário");
     $("greetingText").textContent = `Olá, ${name}`;
     $("userAvatar").textContent = name.trim().charAt(0).toLocaleUpperCase("pt-BR") || "U";
-    // Não mostrar cargo ou badge de função na interface.
   }
 
+  /* ---------- perfil e sessão ---------- */
   async function getProfile(user) {
     const { data, error } = await supabase
       .from("usuarios")
@@ -74,10 +95,17 @@
       currentProfile = null;
     }
     setUserHeader(user, currentProfile);
-    const isAdmin = currentProfile?.papel === "admin";
-    $("adminMenuButton").hidden = !isAdmin;
+    const admin = isAdmin();
+    $("adminMenuButton").hidden = !admin;
+    // Botões exclusivos do administrador (importar planilha).
+    document.querySelectorAll("[data-admin-only]").forEach((el) => { el.hidden = !admin; });
     showApp();
     await loadBooks();
+    if (admin) {
+      loadUsers();
+      loadResetRequests();
+      subscribeResetRequests();
+    }
   }
 
   async function login(event) {
@@ -106,14 +134,34 @@
     if (!supabase) return;
     const { error } = await supabase.auth.signOut();
     if (error) return toast("Não foi possível sair: " + error.message);
+    clearSession();
+  }
+
+  function clearSession() {
     currentUser = null;
     currentProfile = null;
+    if (resetChannel) { supabase.removeChannel(resetChannel); resetChannel = null; }
     $("loginForm").reset();
     showLogin();
   }
 
+  /* ---------- "Esqueci a senha" (tela de login) ---------- */
+  async function forgotPassword() {
+    const email = $("loginEmail").value.trim();
+    const msg = $("loginMessage");
+    if (!supabase) return showMessage(msg, "Configure o Supabase antes de usar.", "error");
+    if (!email) return showMessage(msg, "Digite seu e-mail no campo acima e clique em \"Esqueci a senha\".", "error");
+    const { error } = await supabase.from("pedidos_senha").insert({ email });
+    if (error) {
+      console.error("Erro ao avisar administrador:", error);
+      return showMessage(msg, "Não foi possível enviar o aviso. Procure o administrador.", "error");
+    }
+    // Mensagem neutra: não revela se o e-mail existe.
+    showMessage(msg, "Aviso enviado ao administrador. Ele vai definir uma nova senha para você.", "success");
+  }
+
+  /* ---------- livros ---------- */
   function normalizeBook(row) {
-    // Aceita nomes de colunas comuns usados na sincronização da planilha.
     return {
       id: row.id,
       titulo: row.titulo || row.title || "Título não informado",
@@ -147,24 +195,22 @@
   }
 
   function coverElement(book, className = "book-cover") {
+    const placeholderFor = () => {
+      const p = document.createElement("div");
+      p.className = "cover-placeholder";
+      p.textContent = (book.titulo || "L").charAt(0).toLocaleUpperCase("pt-BR");
+      return p;
+    };
     if (book.capa_url && /^https?:\/\//i.test(book.capa_url)) {
       const img = document.createElement("img");
       img.className = className;
       img.src = book.capa_url;
       img.alt = `Capa de ${book.titulo}`;
       img.loading = "lazy";
-      img.onerror = () => {
-        const placeholder = document.createElement("div");
-        placeholder.className = "cover-placeholder";
-        placeholder.textContent = (book.titulo || "L").charAt(0).toLocaleUpperCase("pt-BR");
-        img.replaceWith(placeholder);
-      };
+      img.onerror = () => img.replaceWith(placeholderFor());
       return img;
     }
-    const placeholder = document.createElement("div");
-    placeholder.className = "cover-placeholder";
-    placeholder.textContent = (book.titulo || "L").charAt(0).toLocaleUpperCase("pt-BR");
-    return placeholder;
+    return placeholderFor();
   }
 
   function renderBooks() {
@@ -176,6 +222,7 @@
     );
     const grid = $("booksGrid");
     grid.replaceChildren();
+    const frag = document.createDocumentFragment();
     $("bookCount").textContent = String(filtered.length);
     $("emptyState").classList.toggle("hidden", filtered.length > 0);
     filtered.forEach((book) => {
@@ -200,8 +247,9 @@
       info.append(title, author, location);
       card.append(coverWrap, info);
       card.addEventListener("click", () => openBookModal(book));
-      grid.appendChild(card);
+      frag.appendChild(card);
     });
+    grid.appendChild(frag);
   }
 
   function openBookModal(book) {
@@ -226,20 +274,19 @@
     $("bookModal").classList.add("hidden");
   }
 
+  /* ---------- senha própria ---------- */
   async function changePassword(event) {
     event.preventDefault();
     if (!supabase || !currentUser) return;
     const current = $("currentPassword").value;
     const next = $("newPassword").value;
-    const confirm = $("confirmPassword").value;
+    const confirmPwd = $("confirmPassword").value;
     if (next.length < 8) return showMessage($("passwordMessage"), "A nova senha deve ter pelo menos 8 caracteres.", "error");
-    if (next !== confirm) return showMessage($("passwordMessage"), "A confirmação não corresponde à nova senha.", "error");
+    if (next !== confirmPwd) return showMessage($("passwordMessage"), "A confirmação não corresponde à nova senha.", "error");
 
     const button = $("passwordForm").querySelector("button[type=submit]");
     button.disabled = true;
     showMessage($("passwordMessage"), "Validando senha atual...");
-    // Reautentica com a senha atual. A sessão existente não é suficiente para provar que
-    // o valor digitado em "Senha atual" está correto.
     const { error: verifyError } = await supabase.auth.signInWithPassword({
       email: currentUser.email,
       password: current
@@ -248,23 +295,31 @@
       button.disabled = false;
       return showMessage($("passwordMessage"), "A senha atual está incorreta ou não foi possível validá-la.", "error");
     }
-
-    const { error } = await supabase.auth.updateUser({
-      password: next,
-      current_password: current
-    });
+    // Corrigido: updateUser não aceita "current_password"; a validação já foi feita acima.
+    const { error } = await supabase.auth.updateUser({ password: next });
     button.disabled = false;
     if (error) return showMessage($("passwordMessage"), "Não foi possível alterar a senha: " + error.message, "error");
     $("passwordForm").reset();
     showMessage($("passwordMessage"), "Senha alterada com sucesso.", "success");
   }
 
+  /* ---------- administração: chamada à Edge Function ---------- */
+  async function adminCall(body) {
+    const { data, error } = await supabase.functions.invoke("admin-usuarios", { body });
+    if (error || data?.error) {
+      console.error("Erro admin:", error || data.error);
+      throw new Error(data?.error || "Falha na operação. Confira se a Edge Function foi publicada.");
+    }
+    return data;
+  }
+
   async function createUser(event) {
     event.preventDefault();
-    if (!supabase || currentProfile?.papel !== "admin") {
+    if (!supabase || !isAdmin()) {
       return showMessage($("adminMessage"), "Apenas administradores podem criar usuários.", "error");
     }
     const payload = {
+      action: "create",
       nome: $("newUserName").value.trim(),
       email: $("newUserEmail").value.trim(),
       password: $("newUserPassword").value,
@@ -274,19 +329,138 @@
     const button = $("createUserForm").querySelector("button[type=submit]");
     button.disabled = true;
     showMessage($("adminMessage"), "Criando usuário...");
-    // A Edge Function deve validar o JWT do chamador e confirmar papel=admin no servidor.
-    const { data, error } = await supabase.functions.invoke("admin-criar-usuario", { body: payload });
-    button.disabled = false;
-    if (error || data?.error) {
-      console.error("Erro ao criar usuário:", error || data.error);
-      return showMessage($("adminMessage"), data?.error || "Falha ao criar usuário. Confira se a Edge Function foi publicada.", "error");
+    try {
+      await adminCall(payload);
+      $("createUserForm").reset();
+      showMessage($("adminMessage"), "");
+      toast(`Usuário "${payload.nome}" criado com sucesso.`);
+      await loadUsers();
+    } catch (err) {
+      showMessage($("adminMessage"), err.message, "error");
+    } finally {
+      button.disabled = false;
     }
-    $("createUserForm").reset();
-    showMessage($("adminMessage"), "Usuário criado com sucesso.", "success");
   }
 
-  function exportXlsx() {
-    if (!window.XLSX) return toast("A biblioteca de exportação não carregou. Verifique sua conexão.");
+  /* ---------- administração: lista de usuários ---------- */
+  async function loadUsers() {
+    const list = $("usersList");
+    if (!list || !isAdmin()) return;
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("id, nome, email, papel")
+      .order("nome", { ascending: true });
+    list.replaceChildren();
+    if (error) {
+      console.error("Erro ao listar usuários:", error);
+      list.textContent = "Não foi possível carregar os usuários.";
+      return;
+    }
+    if (!data.length) { list.textContent = "Nenhum usuário cadastrado."; return; }
+    data.forEach((u) => {
+      const row = document.createElement("div");
+      row.className = "user-row";
+      const info = document.createElement("div");
+      info.className = "user-row-info";
+      const name = document.createElement("strong");
+      name.textContent = safeText(u.nome, "Sem nome");
+      const mail = document.createElement("span");
+      mail.textContent = ` ${safeText(u.email, "")} · ${u.papel === "admin" ? "Administrador" : "Operador"}`;
+      info.append(name, mail);
+      row.appendChild(info);
+      if (u.id !== currentUser?.id) {
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "btn danger";
+        del.textContent = "Excluir";
+        del.addEventListener("click", () => deleteUser(u));
+        row.appendChild(del);
+      }
+      list.appendChild(row);
+    });
+  }
+
+  async function deleteUser(u) {
+    if (!confirm(`Excluir o usuário "${safeText(u.nome, u.email)}"? Esta ação não pode ser desfeita.`)) return;
+    try {
+      await adminCall({ action: "delete", id: u.id });
+      toast("Usuário excluído.");
+      await loadUsers();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  /* ---------- administração: pedidos de nova senha ---------- */
+  async function loadResetRequests() {
+    const list = $("resetRequestsList");
+    if (!list || !isAdmin()) return;
+    const { data, error } = await supabase
+      .from("pedidos_senha")
+      .select("id, email, criado_em")
+      .eq("status", "pendente")
+      .order("criado_em", { ascending: true });
+    list.replaceChildren();
+    const badge = $("resetBadge");
+    if (error) {
+      console.error("Erro ao listar pedidos:", error);
+      list.textContent = "Não foi possível carregar os pedidos.";
+      return;
+    }
+    if (badge) { badge.textContent = String(data.length); badge.hidden = data.length === 0; }
+    if (!data.length) { list.textContent = "Nenhum pedido pendente."; return; }
+    data.forEach((r) => {
+      const row = document.createElement("div");
+      row.className = "user-row";
+      const info = document.createElement("div");
+      info.className = "user-row-info";
+      const mail = document.createElement("strong");
+      mail.textContent = r.email;
+      const when = document.createElement("span");
+      when.textContent = " · " + new Date(r.criado_em).toLocaleString("pt-BR");
+      info.append(mail, when);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Definir nova senha";
+      btn.addEventListener("click", () => resetUserPassword(r));
+      row.append(info, btn);
+      list.appendChild(row);
+    });
+  }
+
+  async function resetUserPassword(request) {
+    const password = prompt(`Nova senha para ${request.email} (mínimo 8 caracteres):`);
+    if (password === null) return;
+    if (password.length < 8) return toast("A senha deve ter pelo menos 8 caracteres.");
+    try {
+      await adminCall({ action: "reset_password", email: request.email, password, request_id: request.id });
+      toast(`Senha de ${request.email} redefinida. Informe a nova senha à pessoa.`);
+      await loadResetRequests();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  function subscribeResetRequests() {
+    if (resetChannel) return;
+    resetChannel = supabase
+      .channel("pedidos-senha")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos_senha" }, (payload) => {
+        toast(`${payload.new?.email || "Um usuário"} esqueceu a senha.`);
+        loadResetRequests();
+      })
+      .subscribe();
+  }
+
+  /* ---------- planilhas: exportar, modelo e importar ---------- */
+  const COLUNAS = [
+    ["Título", 38], ["Autor", 28], ["ISBN", 18], ["Estante", 14],
+    ["Nível", 12], ["Posição (frente/trás)", 22], ["URL da capa", 45], ["Observações", 35]
+  ];
+
+  async function exportXlsx() {
+    if (!(await ensureXlsx())) return toast("A biblioteca de exportação não carregou. Verifique sua conexão.");
     if (!allBooks.length) return toast("Não há livros carregados para exportar.");
     const rows = allBooks.map((book) => ({
       "Título": book.titulo,
@@ -299,17 +473,115 @@
       "Observações": book.observacoes
     }));
     const sheet = XLSX.utils.json_to_sheet(rows);
-    sheet["!cols"] = [{wch:38},{wch:28},{wch:18},{wch:14},{wch:12},{wch:22},{wch:45},{wch:35}];
+    sheet["!cols"] = COLUNAS.map(([, w]) => ({ wch: w }));
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, "Livros");
-    XLSX.writeFile(workbook, `acervo-biblioteca-${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(workbook, `acervo-biblioteca-${new Date().toISOString().slice(0, 10)}.xlsx`);
     toast("Exportação XLSX iniciada.");
   }
 
+  async function downloadTemplate() {
+    if (!(await ensureXlsx())) return toast("A biblioteca de planilhas não carregou. Verifique sua conexão.");
+    const sheet = XLSX.utils.aoa_to_sheet([COLUNAS.map(([n]) => n)]);
+    sheet["!cols"] = COLUNAS.map(([, w]) => ({ wch: w }));
+    const help = XLSX.utils.aoa_to_sheet([
+      ["Como preencher"],
+      ["Preencha uma linha por livro na aba \"Livros\". Apague nada na primeira linha (cabeçalho)."],
+      ["Título é obrigatório. Os demais campos são opcionais."],
+      ["Estante e Nível: número ou letra (ex.: 3 e 2). Posição: frente ou trás."],
+      ["URL da capa: link começando com http:// ou https://."],
+      ["Livros com ISBN já cadastrado são ignorados na importação."]
+    ]);
+    help["!cols"] = [{ wch: 90 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "Livros");
+    XLSX.utils.book_append_sheet(wb, help, "Instruções");
+    XLSX.writeFile(wb, "modelo-importacao-livros.xlsx");
+    toast("Modelo de planilha baixado.");
+  }
+
+  // Remove acentos, espaços e símbolos para reconhecer o cabeçalho de qualquer jeito.
+  const norm = (s) => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  const ALIASES = {
+    titulo: ["titulo", "title", "nome", "livro"],
+    autor: ["autor", "author", "autores"],
+    isbn: ["isbn"],
+    estante: ["estante", "estantenumero", "shelf"],
+    nivel: ["nivel", "prateleira", "level"],
+    posicao: ["posicao", "posicaofrentetras", "position"],
+    capa_url: ["urldacapa", "capaurl", "capa", "thumbnail", "imageurl"],
+    observacoes: ["observacoes", "observacao", "obs"]
+  };
+
+  function mapRow(raw) {
+    const out = {};
+    const byNorm = {};
+    Object.keys(raw).forEach((k) => { byNorm[norm(k)] = raw[k]; });
+    for (const [field, names] of Object.entries(ALIASES)) {
+      const hit = names.find((n) => n in byNorm);
+      out[field] = hit ? String(byNorm[hit] ?? "").trim() : "";
+    }
+    return out;
+  }
+
+  async function importXlsx(event) {
+    const input = event.target;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    if (!isAdmin()) return toast("Apenas administradores podem importar livros.");
+    if (!(await ensureXlsx())) return toast("A biblioteca de planilhas não carregou. Verifique sua conexão.");
+
+    let found = [];
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      for (const name of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: "", raw: false });
+        // Só considera abas que tenham a coluna de título (ignora "Instruções").
+        if (!rows.length || !Object.keys(rows[0]).some((k) => ALIASES.titulo.includes(norm(k)))) continue;
+        rows.forEach((r) => { const b = mapRow(r); if (b.titulo) found.push(b); });
+      }
+    } catch (err) {
+      console.error("Erro ao ler planilha:", err);
+      return toast("Não foi possível ler o arquivo. Use o modelo .xlsx.");
+    }
+    if (!found.length) return toast("Nenhum livro encontrado. Confira se há a coluna \"Título\".");
+
+    // Ignora duplicados por ISBN (já no acervo ou repetidos na própria planilha).
+    const digits = (s) => String(s).replace(/[^0-9Xx]/g, "").toUpperCase();
+    const seen = new Set(allBooks.map((b) => digits(b.isbn)).filter(Boolean));
+    const novos = [];
+    let ignorados = 0;
+    for (const b of found) {
+      const key = digits(b.isbn);
+      if (key && seen.has(key)) { ignorados++; continue; }
+      if (key) seen.add(key);
+      novos.push(b);
+    }
+    if (!novos.length) return toast(`Nada a importar: ${ignorados} livro(s) já existem no acervo.`);
+    if (!confirm(`Importar ${novos.length} livro(s) novo(s)?` + (ignorados ? ` (${ignorados} duplicado(s) serão ignorados)` : ""))) return;
+
+    toast("Importando livros...");
+    for (let i = 0; i < novos.length; i += 500) {
+      const { error } = await supabase.from("livros").insert(novos.slice(i, i + 500));
+      if (error) {
+        console.error("Erro ao importar:", error);
+        await loadBooks();
+        return toast("Falha ao importar: " + error.message);
+      }
+    }
+    await loadBooks();
+    toast(`${novos.length} livro(s) importado(s) com sucesso.`);
+  }
+
+  /* ---------- navegação ---------- */
   function setView(viewId) {
     document.querySelectorAll(".view").forEach((view) => view.classList.toggle("hidden", view.id !== viewId));
     document.querySelectorAll(".nav-item[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === viewId));
     closeSidebar();
+    if (isAdmin() && $("adminMenuButton").dataset.view === viewId) { loadUsers(); loadResetRequests(); }
   }
 
   function openSidebar() {
@@ -325,10 +597,15 @@
 
   function bindEvents() {
     $("loginForm").addEventListener("submit", login);
+    $("forgotButton")?.addEventListener("click", forgotPassword);
     $("logoutButton").addEventListener("click", logout);
-    $("searchInput").addEventListener("input", renderBooks);
+    let searchTimer;
+    $("searchInput").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderBooks, 120); });
     $("clearSearch").addEventListener("click", () => { $("searchInput").value = ""; renderBooks(); $("searchInput").focus(); });
-    $("exportButton").addEventListener("click", exportXlsx);
+    $("exportButton").addEventListener("click", () => { closeSidebar(); exportXlsx(); });
+    $("templateButton")?.addEventListener("click", downloadTemplate);
+    $("importButton")?.addEventListener("click", () => $("importFile").click());
+    $("importFile")?.addEventListener("change", importXlsx);
     $("passwordForm").addEventListener("submit", changePassword);
     $("createUserForm").addEventListener("submit", createUser);
     document.querySelectorAll(".nav-item[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
@@ -353,11 +630,7 @@
     else showLogin();
 
     supabase.auth.onAuthStateChange((event, sessionNow) => {
-      if (event === "SIGNED_OUT" || !sessionNow) {
-        currentUser = null;
-        currentProfile = null;
-        showLogin();
-      }
+      if (event === "SIGNED_OUT" || !sessionNow) clearSession();
     });
   }
 
