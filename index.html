@@ -4,18 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#2459a9">
+  <meta name="description" content="Consulte a localização dos livros do acervo da biblioteca escolar.">
   <title>Biblioteca Escolar</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232459a9'/%3E%3Cpath d='M14 18c6-3 13-3 18 1 5-4 12-4 18-1v28c-6-3-13-3-18 1-5-4-12-4-18-1z' fill='none' stroke='white' stroke-width='4' stroke-linejoin='round'/%3E%3Cpath d='M32 19v28' stroke='white' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="style.css">
-  <!-- Supabase JS v2 -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- SheetJS: exportação real para .xlsx -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- Supabase JS v2 (a biblioteca de planilhas é carregada só quando necessária) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
+  <!-- Ícone do livro reutilizado no login e no menu -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="icon-book" viewBox="0 0 24 24">
+      <path d="M3 5.5C6 4 9.5 4 12 6c2.5-2 6-2 9-.5v13c-3-1.5-6.5-1.5-9 .5-2.5-2-6-2-9-.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M12 6v13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
+  </svg>
+
   <section id="loginScreen" class="login-screen">
     <form id="loginForm" class="login-card">
-      <div class="brand-mark">B</div>
+      <div class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg></div>
       <p class="eyebrow">ACERVO ESCOLAR</p>
       <h1>Biblioteca Escolar</h1>
       <p class="muted">Entre para consultar a localização dos livros.</p>
@@ -24,23 +33,30 @@
       <label for="loginPassword">Senha</label>
       <input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Sua senha">
       <button class="primary full" type="submit">Entrar</button>
+      <button id="forgotButton" class="link-button" type="button">Esqueci a senha</button>
       <p id="loginMessage" class="message" role="status"></p>
     </form>
   </section>
 
   <div id="appScreen" class="app-shell hidden">
     <aside id="sidebar" class="sidebar">
-      <div class="sidebar-brand"><div class="brand-mark small">B</div><div><strong>Biblioteca</strong><span>Escolar</span></div></div>
+      <div class="sidebar-brand">
+        <div class="brand-mark small"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg></div>
+        <div><strong>Biblioteca</strong><span>Escolar</span></div>
+      </div>
       <nav aria-label="Menu principal">
         <button class="nav-item active" data-view="booksView"><span>⌕</span> Procurar livros</button>
         <button class="nav-item" id="exportButton"><span>⇩</span> Exportar XLSX</button>
+        <button class="nav-item" id="templateButton" data-admin-only hidden><span>▤</span> Baixar modelo</button>
+        <button class="nav-item" id="importButton" data-admin-only hidden><span>⇧</span> Importar planilha</button>
         <button class="nav-item" data-view="settingsView"><span>⚙</span> Configurações</button>
-        <button class="nav-item" id="adminMenuButton" data-view="adminView" hidden><span>＋</span> Gerenciar usuários</button>
+        <button class="nav-item" id="adminMenuButton" data-view="adminView" hidden><span>＋</span> Gerenciar usuários <b id="resetBadge" class="badge" hidden>0</b></button>
         <button class="nav-item logout" id="logoutButton"><span>↪</span> Sair</button>
       </nav>
       <div class="sidebar-footer">Catálogo da biblioteca</div>
     </aside>
     <div id="sidebarScrim" class="sidebar-scrim"></div>
+    <input type="file" id="importFile" accept=".xlsx,.xls,.csv" hidden>
 
     <main class="main-area">
       <header class="topbar">
@@ -75,17 +91,31 @@
       </section>
 
       <section id="adminView" class="view hidden">
-        <div class="page-heading"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h1>Gerenciar usuários</h1><p class="muted">Crie acessos para a equipe da biblioteca.</p></div></div>
-        <form id="createUserForm" class="panel form-panel">
-          <h2>Novo usuário</h2>
-          <label for="newUserName">Nome completo</label><input id="newUserName" required maxlength="100" placeholder="Nome do usuário">
-          <label for="newUserEmail">E-mail de acesso</label><input id="newUserEmail" type="email" required placeholder="usuario@escola.com">
-          <label for="newUserPassword">Senha inicial</label><input id="newUserPassword" type="password" minlength="8" required autocomplete="new-password">
-          <label for="newUserRole">Permissão</label><select id="newUserRole"><option value="operador">Operador</option><option value="admin">Administrador</option></select>
-          <button class="primary" type="submit">Criar usuário</button>
-          <p id="adminMessage" class="message" role="status"></p>
-          <p class="form-hint">A criação ocorre por uma Edge Function protegida. Nunca coloque a chave service_role neste site.</p>
-        </form>
+        <div class="page-heading"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h1>Gerenciar usuários</h1><p class="muted">Crie acessos, exclua usuários e atenda pedidos de nova senha.</p></div></div>
+        <div class="admin-grid">
+          <form id="createUserForm" class="panel form-panel">
+            <h2>Novo usuário</h2>
+            <label for="newUserName">Nome completo</label><input id="newUserName" required maxlength="100" placeholder="Nome do usuário">
+            <label for="newUserEmail">E-mail de acesso</label><input id="newUserEmail" type="email" required placeholder="usuario@escola.com">
+            <label for="newUserPassword">Senha inicial</label><input id="newUserPassword" type="password" minlength="8" required autocomplete="new-password">
+            <label for="newUserRole">Permissão</label><select id="newUserRole"><option value="operador">Operador</option><option value="admin">Administrador</option></select>
+            <button class="primary" type="submit">Criar usuário</button>
+            <p id="adminMessage" class="message" role="status"></p>
+            <p class="form-hint">A criação ocorre por uma Edge Function protegida. Nunca coloque a chave service_role neste site.</p>
+          </form>
+
+          <div class="admin-lists">
+            <div class="panel">
+              <h2>Pedidos de nova senha</h2>
+              <p class="muted small">Quem clicou em "Esqueci a senha" aparece aqui.</p>
+              <div id="resetRequestsList" class="user-list"></div>
+            </div>
+            <div class="panel">
+              <h2>Usuários cadastrados</h2>
+              <div id="usersList" class="user-list"></div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <footer class="app-footer">Biblioteca Escolar <span>•</span> Consulta do acervo</footer>
@@ -119,6 +149,6 @@
       </div>
     </article>
   </div>
-  <div id="toast" class="toast" role="status"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
