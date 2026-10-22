@@ -1,167 +1,400 @@
-<!doctype html>
+
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#2459a9">
-  <meta name="description" content="Consulte a localização dos livros do acervo da biblioteca escolar.">
-  <title>Biblioteca Escolar</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232459a9'/%3E%3Cpath d='M14 18c6-3 13-3 18 1 5-4 12-4 18-1v28c-6-3-13-3-18 1-5-4-12-4-18-1z' fill='none' stroke='white' stroke-width='4' stroke-linejoin='round'/%3E%3Cpath d='M32 19v28' stroke='white' stroke-width='4'/%3E%3C/svg%3E">
-  <script>
-    try {
-      document.documentElement.dataset.theme = localStorage.getItem("tema") ||
-        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    } catch (e) {}
-  </script>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="stylesheet" href="style.css">
-  <!-- Supabase JS v2 (a biblioteca de planilhas é carregada só quando necessária) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
-  <script src="app.js" defer></script>
-</head>
-<body>
-  <!-- Ícone do livro reutilizado no login e no menu -->
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-    <symbol id="icon-book" viewBox="0 0 24 24">
-      <path d="M3 5.5C6 4 9.5 4 12 6c2.5-2 6-2 9-.5v13c-3-1.5-6.5-1.5-9 .5-2.5-2-6-2-9-.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-      <path d="M12 6v13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-    </symbol>
-  </svg>
+  <meta name="theme-color" content="#f5f7fb">
+  <title>Minha Biblioteca</title>
 
+  <style>
+    :root {
+      --primary: #3568b8;
+      --primary-hover: #28559b;
+      --bg: #f5f7fb;
+      --surface: #fff;
+      --text: #202938;
+      --muted: #687386;
+      --border: #e1e6ef;
+      --success: #18794e;
+      --danger: #b42318;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .hidden { display: none !important; }
+
+    .login-screen {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 400px;
+      padding: 28px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: white;
+      box-shadow: 0 8px 30px #1e325008;
+    }
+
+    h1, h2, p { margin-top: 0; }
+    .brand { margin-bottom: 5px; font-size: 27px; }
+    .subtitle, .description, .panel-description {
+      color: var(--muted);
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 16px;
+      min-width: 0;
+    }
+
+    label { font-size: 14px; font-weight: 600; }
+
+    input {
+      width: 100%;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: white;
+      color: var(--text);
+    }
+
+    input:focus {
+      outline: 2px solid #3568b833;
+      border-color: var(--primary);
+    }
+
+    .btn {
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 9px;
+      font-weight: 600;
+    }
+
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: #edf1f7; color: var(--text); }
+    .btn:disabled { opacity: .6; cursor: wait; }
+    .full-width { width: 100%; }
+
+    .app-header {
+      background: white;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-inner {
+      max-width: 1100px;
+      margin: auto;
+      padding: 16px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .header-title { margin: 0; font-size: 21px; }
+
+    .user-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .avatar {
+      width: 38px;
+      height: 38px;
+      flex: 0 0 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #e8f0fe;
+      color: var(--primary);
+      font-weight: bold;
+    }
+
+    .logout-button {
+      padding: 8px 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: white;
+    }
+
+    .main {
+      max-width: 1100px;
+      margin: auto;
+      padding: 24px 22px 40px;
+    }
+
+    .welcome { margin-bottom: 5px; font-size: 25px; }
+    .description { margin-bottom: 24px; }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 22px;
+    }
+
+    .tab {
+      flex: 0 0 auto;
+      padding: 12px 16px;
+      border: 0;
+      border-bottom: 3px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    .panel {
+      padding: 23px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: white;
+    }
+
+    .panel h2 { margin-bottom: 5px; font-size: 20px; }
+    .panel-description { margin-bottom: 22px; font-size: 14px; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0 16px;
+    }
+
+    .span-two { grid-column: 1 / -1; }
+
+    .notice {
+      padding: 11px 13px;
+      border-radius: 9px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .notice.error { background: #fef3f2; color: var(--danger); }
+    .notice.success { background: #ecfdf3; color: var(--success); }
+    .notice.info { background: #eff6ff; color: #2459a9; }
+
+    .search-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .search-row input { flex: 1; }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8f9fc;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+    .empty-state { text-align: center; color: var(--muted); padding: 26px 12px; }
+
+    .footer {
+      padding-top: 22px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 600px) {
+      .header-inner { padding: 14px; }
+      .header-title { font-size: 18px; }
+      .user-area { gap: 7px; }
+      .user-name { display: none; }
+      .main { padding: 20px 14px 30px; }
+      .welcome { font-size: 22px; }
+      .panel { padding: 17px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .span-two { grid-column: auto; }
+      .search-row { flex-direction: column; }
+      .login-card { padding: 23px 20px; }
+    }
+  </style>
+</head>
+
+<body>
   <section id="loginScreen" class="login-screen">
-    <div class="theme-toggle floating" role="group" aria-label="Tema"><button type="button" data-theme-btn="light" aria-label="Tema claro" aria-pressed="true">☀</button><button type="button" data-theme-btn="dark" aria-label="Tema escuro" aria-pressed="false">☾</button></div>
-    <form id="loginForm" class="login-card">
-      <div class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg></div>
-      <p class="eyebrow">ACERVO ESCOLAR</p>
-      <h1>Biblioteca Escolar</h1>
-      <p class="muted">Entre para consultar a localização dos livros.</p>
-      <label for="loginEmail">E-mail</label>
-      <input id="loginEmail" type="email" autocomplete="username" required placeholder="seu@email.com">
-      <label for="loginPassword">Senha</label>
-      <input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Sua senha">
-      <button class="primary full" type="submit">Entrar</button>
-      <button id="forgotButton" class="link-button" type="button">Esqueci a senha</button>
-      <p id="loginMessage" class="message" role="status"></p>
-    </form>
+    <div class="login-card">
+      <h1 class="brand">Minha Biblioteca</h1>
+      <p class="subtitle">Entre para gerenciar seu acervo.</p>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="loginUser">Usuário</label>
+          <input id="loginUser" autocomplete="username" required>
+        </div>
+
+        <div class="field">
+          <label for="loginPassword">Senha</label>
+          <input id="loginPassword" type="password"
+            autocomplete="current-password" required>
+        </div>
+
+        <div id="loginMessage" aria-live="polite"></div>
+        <button id="loginButton" class="btn btn-primary full-width">
+          Entrar
+        </button>
+      </form>
+    </div>
   </section>
 
-  <div id="appScreen" class="app-shell hidden">
-    <aside id="sidebar" class="sidebar">
-      <div class="sidebar-brand">
-        <div class="brand-mark small"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg></div>
-        <div><strong>Biblioteca</strong><span>Escolar</span></div>
+  <div id="appScreen" class="hidden">
+    <header class="app-header">
+      <div class="header-inner">
+        <h1 class="header-title">Minha Biblioteca</h1>
+        <div class="user-area">
+          <div id="userAvatar" class="avatar">U</div>
+          <span id="userName" class="user-name">Usuário</span>
+          <button id="logoutButton" class="logout-button" type="button">
+            Sair
+          </button>
+        </div>
       </div>
-      <nav aria-label="Menu principal">
-        <button class="nav-item active" data-view="booksView"><span>⌕</span> Procurar livros</button>
-        <div class="nav-group">
-          <button class="nav-item" id="excelMenuButton" aria-expanded="false" aria-controls="excelSubmenu"><span>▦</span> Excel <i class="chev">▾</i></button>
-          <div id="excelSubmenu" class="submenu" hidden>
-            <button class="nav-item sub" id="templateButton" data-admin-only hidden><span>▤</span> Baixar modelo para upload</button>
-            <button class="nav-item sub" id="importButton" data-admin-only hidden><span>⇧</span> Fazer upload da catalogação</button>
-            <button class="nav-item sub" id="exportButton"><span>⇩</span> Baixar catálogo completo</button>
-          </div>
-        </div>
-        <button class="nav-item" data-view="settingsView"><span>⚙</span> Configurações</button>
-        <button class="nav-item" id="adminMenuButton" data-view="adminView" hidden><span>＋</span> Gerenciar usuários <b id="resetBadge" class="badge" hidden>0</b></button>
-        <button class="nav-item logout" id="logoutButton"><span>↪</span> Sair</button>
+    </header>
+
+    <main class="main">
+      <h2 class="welcome">Seu acervo, organizado.</h2>
+      <p class="description">Cadastre, consulte e localize seus livros.</p>
+
+      <nav class="tabs" aria-label="Navegação principal">
+        <button class="tab active" data-tab="registerPanel" type="button">
+          Cadastrar Livro
+        </button>
+        <button class="tab" data-tab="catalogPanel" type="button">
+          Consulta / Acervo
+        </button>
       </nav>
-      <div class="sidebar-footer">Catálogo da biblioteca</div>
-    </aside>
-    <div id="sidebarScrim" class="sidebar-scrim"></div>
-    <input type="file" id="importFile" accept=".xlsx,.xls,.csv" hidden>
 
-    <main class="main-area">
-      <header class="topbar">
-        <button id="menuButton" class="icon-button menu-button" aria-label="Abrir menu" aria-expanded="false">☰</button>
-        <div class="greeting"><span class="muted">Bem-vindo à biblioteca</span><h2 id="greetingText">Olá!</h2></div>
-        <div class="theme-toggle" role="group" aria-label="Tema"><button type="button" data-theme-btn="light" aria-label="Tema claro" aria-pressed="true">☀</button><button type="button" data-theme-btn="dark" aria-label="Tema escuro" aria-pressed="false">☾</button></div>
-        <div id="userAvatar" class="avatar" aria-label="Inicial do usuário">U</div>
-      </header>
+      <section id="registerPanel" class="panel">
+        <h2>Cadastrar livro</h2>
+        <p class="panel-description">
+          Preencha os dados para salvar na planilha.
+        </p>
 
-      <section id="booksView" class="view">
-        <div class="page-heading">
-          <div><p class="eyebrow">CATÁLOGO</p><h1>Encontre seu próximo livro</h1><p class="muted">Pesquise por título, autor ou ISBN.</p></div>
-          <div class="book-count"><strong id="bookCount">0</strong><span>livros encontrados</span></div>
-        </div>
-        <div class="search-box"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Digite título, autor ou ISBN..." aria-label="Pesquisar livros"><button id="clearSearch" class="clear-search" type="button" aria-label="Limpar pesquisa">×</button></div>
-        <p id="catalogMessage" class="message" role="status"></p>
-        <div id="booksGrid" class="books-grid"></div>
-        <div id="emptyState" class="empty-state hidden"><div class="empty-icon">⌕</div><h3>Nenhum livro encontrado</h3><p>Tente outro título, autor ou ISBN.</p></div>
-      </section>
+        <form id="bookForm">
+          <div class="form-grid">
+            <div class="field">
+              <label for="bookId">Número do Livro (ID)</label>
+              <input id="bookId" maxlength="50" required>
+            </div>
 
-      <section id="settingsView" class="view hidden">
-        <div class="page-heading"><div><p class="eyebrow">SUA CONTA</p><h1>Configurações</h1><p class="muted">Atualize sua senha com segurança.</p></div></div>
-        <form id="passwordForm" class="panel form-panel">
-          <h2>Alterar senha</h2>
-          <p class="muted">Informe a senha atual e escolha uma nova senha.</p>
-          <label for="currentPassword">Senha atual</label><input id="currentPassword" type="password" autocomplete="current-password" required>
-          <label for="newPassword">Nova senha</label><input id="newPassword" type="password" autocomplete="new-password" minlength="8" required>
-          <label for="confirmPassword">Confirmar nova senha</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
-          <p class="form-hint">Use pelo menos 8 caracteres e evite reutilizar senhas de outros sites.</p>
-          <button class="primary" type="submit">Salvar nova senha</button>
-          <p id="passwordMessage" class="message" role="status"></p>
+            <div class="field">
+              <label for="isbn">ISBN</label>
+              <input id="isbn" maxlength="25"
+                placeholder="978-85-00000-00-0" required>
+            </div>
+
+            <div class="field span-two">
+              <label for="title">Título</label>
+              <input id="title" maxlength="300" required>
+            </div>
+
+            <div class="field">
+              <label for="author">Autor</label>
+              <input id="author" maxlength="200" required>
+            </div>
+
+            <div class="field">
+              <label for="publisher">Editora</label>
+              <input id="publisher" maxlength="200" required>
+            </div>
+          </div>
+
+          <div id="bookMessage" aria-live="polite"></div>
+          <button id="saveButton" class="btn btn-primary" type="submit">
+            Salvar na Planilha
+          </button>
         </form>
       </section>
 
-      <section id="adminView" class="view hidden">
-        <div class="page-heading"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h1>Gerenciar usuários</h1><p class="muted">Crie acessos, exclua usuários e atenda pedidos de nova senha.</p></div></div>
-        <div class="admin-grid">
-          <form id="createUserForm" class="panel form-panel">
-            <h2>Novo usuário</h2>
-            <label for="newUserName">Nome completo</label><input id="newUserName" required maxlength="100" placeholder="Nome do usuário">
-            <label for="newUserEmail">E-mail de acesso</label><input id="newUserEmail" type="email" required placeholder="usuario@escola.com">
-            <label for="newUserPassword">Senha inicial</label><input id="newUserPassword" type="password" minlength="8" required autocomplete="new-password">
-            <label for="newUserRole">Permissão</label><select id="newUserRole"><option value="operador">Operador</option><option value="admin">Administrador</option></select>
-            <button class="primary" type="submit">Criar usuário</button>
-            <p id="adminMessage" class="message" role="status"></p>
-            <p class="form-hint">A criação ocorre por uma Edge Function protegida. Nunca coloque a chave service_role neste site.</p>
-          </form>
+      <section id="catalogPanel" class="panel hidden">
+        <h2>Consulta / Acervo</h2>
+        <p class="panel-description">
+          Pesquise por título, número do livro ou ISBN.
+        </p>
 
-          <div class="admin-lists">
-            <div class="panel">
-              <h2>Pedidos de nova senha</h2>
-              <p class="muted small">Quem clicou em "Esqueci a senha" aparece aqui.</p>
-              <div id="resetRequestsList" class="user-list"></div>
-            </div>
-            <div class="panel">
-              <h2>Usuários cadastrados</h2>
-              <div id="usersList" class="user-list"></div>
-            </div>
-          </div>
+        <div class="search-row">
+          <input id="searchInput" type="search"
+            placeholder="Digite para pesquisar..."
+            aria-label="Pesquisar livros">
+          <button id="refreshButton" class="btn btn-secondary" type="button">
+            Atualizar acervo
+          </button>
+        </div>
+
+        <div id="catalogMessage" aria-live="polite"></div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Número</th>
+                <th>Título</th>
+                <th>Autor</th>
+                <th>Editora</th>
+                <th>ISBN</th>
+              </tr>
+            </thead>
+            <tbody id="bookTableBody">
+              <tr><td colspan="5" class="empty-state">
+                Entre no sistema para carregar o acervo.
+              </td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
-      <footer class="app-footer">Biblioteca Escolar <span>•</span> Consulta do acervo</footer>
+      <footer class="footer">
+        Minha Biblioteca · Gestão de acervo
+      </footer>
     </main>
   </div>
 
-  <div id="bookModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <div class="modal-backdrop" data-close-modal></div>
-    <article class="modal-card">
-      <button id="closeModal" class="modal-close" aria-label="Fechar">×</button>
-      <div class="modal-book-head"><img id="modalCover" class="modal-cover" alt="" src=""><div><p class="eyebrow">LOCALIZAÇÃO NO ACERVO</p><h2 id="modalTitle"></h2><p id="modalAuthor" class="muted"></p><p id="modalIsbn" class="isbn-line"></p></div></div>
-      <div class="shelf-map">
-        <div class="shelf-map-title"><span>MAPA DA PRATELEIRA</span><span id="mapShelfLabel">Estante —</span></div>
-        <div class="shelf-visual">
-          <div class="shelf-side-label">ESTANTE</div>
-          <div class="shelf-body">
-            <div class="shelf-top"><span id="mapLevelLabel">Nível —</span></div>
-            <div class="shelf-books" aria-label="Representação ilustrativa da prateleira">
-              <span class="shelf-book book-one"></span><span class="shelf-book book-two"></span><span class="shelf-book book-three"></span><span id="selectedBookMarker" class="selected-book"><span>SEU LIVRO</span></span><span class="shelf-book book-four"></span><span class="shelf-book book-five"></span>
-            </div>
-            <div class="shelf-plank"></div>
-            <div class="shelf-position"><span>FRENTE</span><span class="position-arrow">↔</span><span>TRÁS</span></div>
-          </div>
-        </div>
-        <div class="location-details">
-          <div><span>Estante</span><strong id="detailShelf">—</strong></div>
-          <div><span>Nível</span><strong id="detailLevel">—</strong></div>
-          <div><span>Posição</span><strong id="detailPosition">—</strong></div>
-        </div>
-        <p id="modalLocationNote" class="location-note">Confirme a sinalização física da estante na biblioteca.</p>
-      </div>
-    </article>
-  </div>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="script.js"></script>
 </body>
 </html>
