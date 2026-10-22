@@ -2,7 +2,7 @@
 "use strict";
 
 // Substitua pela URL real do Web App do Google Apps Script.
-const API_URL = "COLE_A_URL_DO_APPS_SCRIPT/exec";
+const API_URL = "https://script.google.com/a/macros/escola.pr.gov.br/s/AKfycbyjPSPnS-81J8lEf4ntD-RLqZ2oJSDxdz8w-qK01QaIWxnjCDtXrjIyfRNvFgXVDG3H/exec";
 
 const SESSION_KEY = "biblioteca_token";
 const USER_KEY = "biblioteca_usuario";
